@@ -7,7 +7,7 @@
 func main() {
     s := NewPublisherServer()
     go s.Sub("hello")
-    s.Pub("hello", fmt.Sprintf("啊哈哈哈 golang channel %d", i))
+    s.Pub("hello", "golang")
     s.Close("hello")
 }
 ```
