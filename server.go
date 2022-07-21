@@ -46,6 +46,7 @@ func (s *PublisherServer) Pub(topic string, v interface{}) {
 func (s *PublisherServer) Close(topic string) {
 	p := s.newPublisher(topic)
 	p.Close()
+	delete(s.Bucket, topic)
 }
 
 // newPublisher 获取主题订阅
