@@ -202,9 +202,9 @@ func handleRequest(conn net.Conn, p *Publisher) {
 		fmt.Println(fmt.Sprintf("request string: [%s]", string(bytes)))
 		content := strings.Split(string(bytes), " ")
 		if content[0] == "subscribe" {
-			Conns[conn.RemoteAddr().String()] = conn
 			topic := content[1]
-			Conns[topic] = conn
+			addr := conn.RemoteAddr().String()
+			Conns[addr+topic] = conn
 			go func() {
 				c := p.SubscribeTopic(func(v interface{}) bool {
 					if s, ok := v.(string); ok && strings.Contains(s, topic) {
@@ -214,41 +214,13 @@ func handleRequest(conn net.Conn, p *Publisher) {
 				})
 				for v := range c {
 					for k, conn2 := range Conns {
-						if k == topic {
+						if k == addr+topic {
 							conn2.Write([]byte(fmt.Sprintf("%s topic: %v", topic, v)))
 						}
 					}
 				}
-				//select {
-				//case msg := <-c:
-				//	for k, conn2 := range Conns {
-				//		if k == topic {
-				//			conn2.Write([]byte(fmt.Sprintf("%s topic: %v", topic, msg)))
-				//		}
-				//	}
-				//}
-				//fmt.Println("golang topic: ", <-c)
+
 			}()
-			//c := p.SubscribeTopic(func(v interface{}) bool {
-			//	if s, ok := v.(string); ok && strings.Contains(s, topic) {
-			//		return true
-			//	}
-			//	return false
-			//})
-			//Conns[address] = conn
-			//fmt.Println(Conns)
-			//
-			//fmt.Println("chan size ", len(c))
-			//for v := range c {
-			//	fmt.Println("conns size ", len(Conns))
-			//	for _, connv := range Conns {
-			//		n, err := connv.Write([]byte(fmt.Sprintf("%v", v)))
-			//		if err != nil {
-			//			return
-			//		}
-			//		fmt.Println("write size", n)
-			//	}
-			//}
 		} else if content[0] == "publish" {
 			topic := content[1]
 			go p.Publish(topic + content[2] + "\n")
