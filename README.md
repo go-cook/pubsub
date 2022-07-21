@@ -4,6 +4,8 @@
 
 # 运行
 ```go
+package main
+
 func main() {
     p := NewPublisher(100*time.Microsecond, 10)
     golang := p.SubscribeTopic(func(v interface{}) bool {
