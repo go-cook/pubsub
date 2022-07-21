@@ -1,7 +1,11 @@
 package pubsub
 
 import (
+	"bufio"
 	"fmt"
+	"net"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -150,19 +154,242 @@ func TestRunPubSub(t *testing.T) {
 
 	go s.Sub("hello")
 	// 多个订阅者
-	go s.Sub("hello")
-	go s.Sub("hello")
+	go s.Sub("golang")
+	go s.Sub("php")
 
 	time.Sleep(time.Millisecond * 10)
 
-	i := 0
+	go func() {
+		i := 0
+		for {
+			i++
+			s.Pub("hello", fmt.Sprintf("hello channel %d", i))
+			if i > 10 {
+				break
+			}
+		}
+	}()
+
+	go s.Pub("golang", "golang 123")
+	go s.Pub("php", "php 123")
+	time.Sleep(time.Millisecond * 100)
+	s.Close("hello")
+	s.Close("golang")
+	s.Close("php")
+}
+
+func TestTCPPubSub(t *testing.T) {
+	listen, err := net.Listen("tcp", "0.0.0.0:9898")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("server running...")
+	p := GetPublisherInstance()
 	for {
-		i++
-		s.Pub("hello", fmt.Sprintf("啊哈哈哈 golang channel %d", i))
-		if i > 100 {
+		conn, err := listen.Accept()
+		if err != nil {
+			continue
+		}
+		go handleRequest(conn, p)
+	}
+}
+
+var Conns = make(map[string]net.Conn)
+
+func handleRequest(conn net.Conn, p *Publisher) {
+	for {
+		bytes, _, _ := bufio.NewReader(conn).ReadLine()
+		fmt.Println(fmt.Sprintf("request string: [%s]", string(bytes)))
+		content := strings.Split(string(bytes), " ")
+		if content[0] == "subscribe" {
+			Conns[conn.RemoteAddr().String()] = conn
+			topic := content[1]
+			Conns[topic] = conn
+			go func() {
+				c := p.SubscribeTopic(func(v interface{}) bool {
+					if s, ok := v.(string); ok && strings.Contains(s, topic) {
+						return true
+					}
+					return false
+				})
+				for v := range c {
+					for k, conn2 := range Conns {
+						if k == topic {
+							conn2.Write([]byte(fmt.Sprintf("%s topic: %v", topic, v)))
+						}
+					}
+				}
+				//select {
+				//case msg := <-c:
+				//	for k, conn2 := range Conns {
+				//		if k == topic {
+				//			conn2.Write([]byte(fmt.Sprintf("%s topic: %v", topic, msg)))
+				//		}
+				//	}
+				//}
+				//fmt.Println("golang topic: ", <-c)
+			}()
+			//c := p.SubscribeTopic(func(v interface{}) bool {
+			//	if s, ok := v.(string); ok && strings.Contains(s, topic) {
+			//		return true
+			//	}
+			//	return false
+			//})
+			//Conns[address] = conn
+			//fmt.Println(Conns)
+			//
+			//fmt.Println("chan size ", len(c))
+			//for v := range c {
+			//	fmt.Println("conns size ", len(Conns))
+			//	for _, connv := range Conns {
+			//		n, err := connv.Write([]byte(fmt.Sprintf("%v", v)))
+			//		if err != nil {
+			//			return
+			//		}
+			//		fmt.Println("write size", n)
+			//	}
+			//}
+		} else if content[0] == "publish" {
+			topic := content[1]
+			go p.Publish(topic + content[2] + "\n")
+		} else if content[1] == "quit" {
+			topic := content[1]
+			c := p.SubscribeTopic(func(v interface{}) bool {
+				if s, ok := v.(string); ok && strings.Contains(s, topic) {
+					return true
+				}
+				return false
+			})
+			p.Evict(c)
+			break
+		} else {
+			fmt.Println("common chat " + string(bytes))
 			break
 		}
 	}
-	time.Sleep(time.Millisecond * 100)
-	s.Close("hello")
+}
+
+type Event struct {
+	mu  sync.Mutex
+	pub *Publisher
+}
+
+func New() *Event {
+	return &Event{
+		pub: NewPublisher(100*time.Millisecond, bufferSize),
+	}
+}
+
+func (e *Event) Subscribe() (chan interface{}, func()) {
+	e.mu.Lock()
+
+	l := e.pub.Subscribe()
+	e.mu.Unlock()
+
+	cancel := func() {
+		e.Evict(l)
+	}
+	return l, cancel
+}
+
+func (e *Event) Evict(l chan interface{}) {
+	e.pub.Evict(l)
+}
+
+func (e *Event) SubscribeTopic() chan interface{} {
+	e.mu.Lock()
+
+	var topic func(m interface{}) bool
+	topic = func(m interface{}) bool { return true }
+
+	var ch chan interface{}
+	if topic != nil {
+		ch = e.pub.SubscribeTopic(topic)
+	} else {
+		// Subscribe to all events if there are no filters
+		ch = e.pub.Subscribe()
+	}
+
+	e.mu.Unlock()
+	return ch
+}
+
+type Message struct {
+	ID      string
+	Status  string
+	Content string
+	Time    int64
+}
+
+func (e *Event) PublishMessage(jm Message) {
+	e.mu.Lock()
+	e.mu.Unlock()
+	e.pub.Publish(jm)
+}
+
+func (e *Event) SubscribersCount() int {
+	return e.pub.Len()
+}
+
+func TestEvent(t *testing.T) {
+	e := New()
+	go func() {
+		c := e.SubscribeTopic()
+
+		for v := range c {
+			fmt.Println(v)
+		}
+	}()
+	time.Sleep(10)
+	m := Message{
+		ID:      "1",
+		Status:  "success",
+		Content: "Hello",
+		Time:    time.Now().Unix(),
+	}
+	e.PublishMessage(m)
+}
+
+func TestRPCEvent(t *testing.T) {
+	p := NewPublisher(100*time.Microsecond, 10)
+	golang := p.SubscribeTopic(func(v interface{}) bool {
+		if key, ok := v.(string); ok {
+			if strings.HasPrefix(key, "golang:") {
+				return true
+			}
+		}
+		return false
+	})
+
+	docker := p.SubscribeTopic(func(v interface{}) bool {
+		if key, ok := v.(string); ok {
+			if strings.HasPrefix(key, "docker:") {
+				return true
+			}
+		}
+		return false
+	})
+
+	go p.Publish("wang")
+	go p.Publish("golang: https://golang.org")
+	go p.Publish("docker: https://www.docker.com")
+
+	time.Sleep(time.Second * 2)
+
+	go func() {
+		fmt.Println("golang topic:", <-golang)
+	}()
+
+	go func() {
+		fmt.Println("docker topic:", <-docker)
+	}()
+
+	time.Sleep(time.Second * 3)
+	fmt.Println("end")
+}
+
+func TestStringSlice(t *testing.T) {
+	str := "subscribe hello value123"
+	content := strings.Split(str, " ")
+	fmt.Println(content[0])
 }
