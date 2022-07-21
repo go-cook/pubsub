@@ -5,7 +5,13 @@ import (
 	"time"
 )
 
+const (
+	bufferSize = 1024
+)
+
 var wgPool = sync.Pool{New: func() interface{} { return new(sync.WaitGroup) }}
+
+var publisher *Publisher
 
 // NewPublisher creates a new pub/sub publisher to broadcast messages.
 // The duration is used as the send timeout as to not block the publisher publishing
@@ -17,6 +23,11 @@ func NewPublisher(publishTimeout time.Duration, buffer int) *Publisher {
 		timeout:     publishTimeout,
 		subscribers: make(map[subscriber]topicFunc),
 	}
+}
+
+func GetPublisherInstance() *Publisher {
+	publisher = NewPublisher(time.Millisecond*10, bufferSize)
+	return publisher
 }
 
 type subscriber chan interface{}
