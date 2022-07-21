@@ -215,7 +215,11 @@ func handleRequest(conn net.Conn, p *Publisher) {
 				for v := range c {
 					for k, conn2 := range Conns {
 						if k == addr+topic {
-							conn2.Write([]byte(fmt.Sprintf("%s topic: %v", topic, v)))
+							cant, err := conn2.Write([]byte(fmt.Sprintf("%s topic: %v", topic, v)))
+							if err != nil {
+								return
+							}
+							fmt.Println("write cant ", cant)
 						}
 					}
 				}
