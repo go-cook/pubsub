@@ -8,20 +8,20 @@ func main() {
     p := NewPublisher(100*time.Microsecond, 10)
     golang := p.SubscribeTopic(func(v interface{}) bool {
     if key, ok := v.(string); ok {
-    if strings.HasPrefix(key, "golang:") {
-    return true
+        if strings.HasPrefix(key, "golang:") {
+            return true
+        }
     }
-    }
-    return false
+        return false
     })
     
     docker := p.SubscribeTopic(func(v interface{}) bool {
     if key, ok := v.(string); ok {
-    if strings.HasPrefix(key, "docker:") {
-    return true
+        if strings.HasPrefix(key, "docker:") {
+          return true
+        }
     }
-    }
-    return false
+        return false
     })
     
     go p.Publish("abc")
@@ -31,11 +31,11 @@ func main() {
     time.Sleep(time.Second * 2)
     
     go func() {
-    fmt.Println("golang topic:", <-golang)
+        fmt.Println("golang topic:", <-golang)
     }()
     
     go func() {
-    fmt.Println("docker topic:", <-docker)
+        fmt.Println("docker topic:", <-docker)
     }()
     
     time.Sleep(time.Second * 3)
