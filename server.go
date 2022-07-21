@@ -26,13 +26,9 @@ func (s *PublisherServer) Sub(topic string) {
 		}
 		return false
 	})
-	p.Publish("ping")
-	select {
-	case <-c:
-		for v := range c {
-			// TODO 业务处理
-			fmt.Println(v)
-		}
+	for v := range c {
+		// TODO 业务处理
+		fmt.Println(v)
 	}
 }
 
